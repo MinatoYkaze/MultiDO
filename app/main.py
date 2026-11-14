@@ -10,7 +10,9 @@ from .routes import tasks, groups
 
 load_dotenv()
 
-app = FastAPI()
+models.Base.metadata.create_all(bind=database.engine)
+
+app = FastAPI(title="MultiDO Task API")
 
 app.add_middleware(
     CORSMiddleware,

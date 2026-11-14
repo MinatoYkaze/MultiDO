@@ -24,25 +24,22 @@ def create_group(posts: schemas.Group,db: Session = Depends(database.get_db),cur
     db.commit()
     return added
 
-@router.get('/',status_code=status.HTTP_200_OK, response_model=List[schemas.GroupPost])
-def get_groups(db: Session = Depends(database.get_db),current_user= Depends(get_current_user)):
-    getting=db.query(models.Groups).filter(models.Groups.owners_id==current_user["id"]).all()
-    if not getting:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not authorized or validated")
-    
-    return getting
+@router.get('/', status_code=status.HTTP_200_OK, response_model=List[schemas.GroupPost])
+def get_groups(db: Session = Depends(database.get_db), current_user=Depends(get_current_user)):
+    getting = db.query(models.Groups).filter(models.Groups.owners_id == current_user["id"]).all()
+    return getting or []
 
-@router.get("/{group_id}",status_code=status.HTTP_200_OK, response_model=schemas.GroupPost)
-def getting_post(group_id: int, db: Session = Depends(database.get_db),current_user= Depends(get_current_user)):
-    post=db.query(models.Groups).filter(models.Groups.id==group_id, models.Groups.owners_id==current_user["id"]).first()
+@router.get("/{group_id}", status_code=status.HTTP_200_OK, response_model=schemas.GroupPost)
+def getting_post(group_id: int, db: Session = Depends(database.get_db), current_user=Depends(get_current_user)):
+    post = db.query(models.Groups).filter(models.Groups.id == group_id, models.Groups.owners_id == current_user["id"]).first()
     if not post:
-         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not there or not authorized")
+         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found or not authorized")
     return post
 
-@router.patch("/{group_id}",status_code=status.HTTP_302_FOUND, response_model=schemas.GroupPost)
-def updated_group(group_id: int,posts: schemas.UpdateGroup,db: Session = Depends(database.get_db),current_user= Depends(get_current_user)):
-    up=db.query(models.Groups).filter(models.Groups.id==group_id, models.Groups.owners_id==current_user["id"])
-    updates=posts.model_dump(exclude_unset=True)
+@router.patch("/{group_id}", status_code=status.HTTP_200_OK, response_model=schemas.GroupPost)
+def updated_group(group_id: int, posts: schemas.UpdateGroup, db: Session = Depends(database.get_db), current_user=Depends(get_current_user)):
+    up = db.query(models.Groups).filter(models.Groups.id == group_id, models.Groups.owners_id == current_user["id"])
+    updates = posts.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(
               status_code=status.HTTP_400_BAD_REQUEST,
@@ -54,14 +51,14 @@ def updated_group(group_id: int,posts: schemas.UpdateGroup,db: Session = Depends
     db.commit()
     return up.first()
 
-@router.delete("/{group_id}", status_code=status.HTTP_202_ACCEPTED,response_model=schemas.GroupPost)
-def delete(group_id: int, db: Session = Depends(database.get_db),current_user= Depends(get_current_user)):
-     deli=db.query(models.Groups).filter(models.Groups.id==group_id, models.Groups.owners_id==current_user["id"]).first()
+@router.delete("/{group_id}", status_code=status.HTTP_200_OK, response_model=schemas.MessageResponse)
+def delete(group_id: int, db: Session = Depends(database.get_db), current_user=Depends(get_current_user)):
+     deli = db.query(models.Groups).filter(models.Groups.id == group_id, models.Groups.owners_id == current_user["id"]).first()
      if not deli:
-          raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid id or id do not exist")
+          raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid id or id does not exist")
      db.delete(deli)
      db.commit()
-     return {"Messsage":"Deleted the group Sucessfully"}
+     return {"message": "Deleted the group successfully"}
 
 @router.post("/{group_id}/invite", status_code=status.HTTP_201_CREATED,response_model=schemas.GroupInvitationResponse)
 def send_invite(invite: schemas.GroupInvitationBase,group_id: int,db: Session = Depends(database.get_db),current_user= Depends(get_current_user)):
@@ -116,8 +113,9 @@ def send_invite(invite: schemas.GroupInvitationBase,group_id: int,db: Session = 
     return invite_obj
 
 
-@router.get("/invitations/{token}/accept", status_code=status.HTTP_202_ACCEPTED)
-def accept_invitation(token: str,db: Session = Depends(database.get_db),current_user= Depends(get_current_user)):
+@router.get("/invitations/{token}/accept", status_code=status.HTTP_200_OK, response_model=schemas.MessageResponse)
+@router.post("/invitations/{token}/accept", status_code=status.HTTP_200_OK, response_model=schemas.MessageResponse)
+def accept_invitation(token: str, db: Session = Depends(database.get_db), current_user=Depends(get_current_user)):
     qr1=db.query(models.GroupInvitation).filter(models.GroupInvitation.token==token).first()
     if not qr1:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
