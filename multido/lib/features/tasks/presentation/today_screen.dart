@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import '../../../core/audio/audio_controller.dart';
 import '../../../core/models/models.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/router/app_router.dart';
@@ -12,6 +13,7 @@ import '../../../core/widgets/app_snack.dart';
 import '../../../core/widgets/async_states.dart';
 import 'task_format.dart';
 import 'tasks_controller.dart';
+import 'widgets/floating_ai_button.dart';
 import 'widgets/quick_add_dock.dart';
 import 'widgets/task_editor_sheet.dart';
 import 'widgets/task_row.dart';
@@ -44,9 +46,14 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
 
   Future<void> _quickAdd() async {
     final title = _input.text.trim();
-    if (title.isEmpty || _adding) return;
+    if (title.isEmpty) {
+      _openEditor();
+      return;
+    }
+    if (_adding) return;
     setState(() => _adding = true);
     ref.read(hapticsProvider).light();
+    ref.read(audioFxProvider).playPop();
     try {
       await ref
           .read(tasksControllerProvider.notifier)
@@ -82,7 +89,12 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
 
   Future<void> _toggle(Tasks t) async {
     final h = ref.read(hapticsProvider);
-    t.isCompleted ? h.light() : h.success();
+    if (!t.isCompleted) {
+      h.success();
+      ref.read(audioFxProvider).playChime();
+    } else {
+      h.light();
+    }
     try {
       await ref.read(tasksControllerProvider.notifier).toggle(t);
     } catch (e) {
@@ -123,7 +135,7 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
     final keyboard = mq.viewInsets.bottom > 0;
     // mq.padding.bottom already includes the glass nav bar (extendBody).
     final dockBottom = keyboard ? 10.0 : mq.padding.bottom + 10;
-    final listBottom = dockBottom + 84;
+    final listBottom = dockBottom + 120;
 
     Widget body;
     if (async.isLoading && !async.hasValue) {
@@ -237,7 +249,7 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
               ),
               const SizedBox(width: 6),
               _HeaderButton(
-                icon: Icons.auto_awesome_rounded,
+                icon: Icons.animation_rounded,
                 active: rich,
                 tooltip: rich ? 'Rich motion on' : 'Rich motion off',
                 onTap: () {
@@ -250,7 +262,18 @@ class _TodayScreenState extends ConsumerState<TodayScreen> {
           Expanded(
             child: Stack(children: [
               Positioned.fill(child: body),
-              Positioned(
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOutCubic,
+                right: 16,
+                bottom: dockBottom + 64,
+                child: FloatingAIAssistantButton(
+                  visible: !keyboard,
+                ),
+              ),
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOutCubic,
                 left: 16,
                 right: 16,
                 bottom: dockBottom,
@@ -317,7 +340,9 @@ class _Hero extends StatelessWidget {
         builder: (_, v, __) => Container(
           height: 6,
           decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.06),
+              color: p.isDark
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : Colors.black.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(999)),
           child: Align(
             alignment: Alignment.centerLeft,
@@ -367,17 +392,23 @@ class _Filters extends StatelessWidget {
               color: f == value
                   ? (p.isTerminal
                       ? p.accent.withValues(alpha: 0.12)
-                      : Colors.white.withValues(alpha: 0.10))
-                  : Colors.white.withValues(alpha: 0.04),
+                      : (p.isDark
+                          ? Colors.white.withValues(alpha: 0.10)
+                          : p.accent.withValues(alpha: 0.14)))
+                  : (p.isDark
+                      ? Colors.white.withValues(alpha: 0.04)
+                      : Colors.black.withValues(alpha: 0.04)),
               borderRadius: BorderRadius.circular(p.isTerminal ? 4 : 999),
               border: Border.all(
                   color: f == value && p.isTerminal
                       ? p.accent
-                      : Colors.transparent),
+                      : (f == value && !p.isDark ? p.accent.withValues(alpha: 0.3) : Colors.transparent)),
               boxShadow: f == value && !p.isTerminal
                   ? [
                       BoxShadow(
-                          color: Colors.white.withValues(alpha: 0.08),
+                          color: p.isDark
+                              ? Colors.white.withValues(alpha: 0.08)
+                              : p.accent.withValues(alpha: 0.15),
                           blurRadius: 12)
                     ]
                   : null,
@@ -386,7 +417,9 @@ class _Filters extends StatelessWidget {
                 style: t.labelLarge?.copyWith(
                     fontWeight: FontWeight.w500,
                     color: f == value
-                        ? (p.isTerminal ? p.accent : Colors.white)
+                        ? (p.isTerminal
+                            ? p.accent
+                            : (p.isDark ? Colors.white : p.accent))
                         : p.textMuted)),
           ),
         ),

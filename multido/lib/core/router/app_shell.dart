@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../../features/focus/presentation/focus_controller.dart';
 import '../theme/app_palette.dart';
 import '../theme/theme_controller.dart';
 
@@ -24,6 +25,12 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // A finished focus block pops the milestone screen, whichever tab is open.
+    ref.listen(focusControllerProvider.select((s) => s.milestone), (prev, next) {
+      if (prev == null && next != null) {
+        context.go('/focus/milestone');
+      }
+    });
     return Scaffold(
       extendBody: true,
       resizeToAvoidBottomInset: false,
@@ -47,6 +54,12 @@ class _GlassNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    // Balanced vertical padding:
+    // Respect system safe area when present (e.g. mobile home indicator);
+    // When 0 (e.g. web/desktop), provide 12px bottom padding so items aren't pushed against the screen edge.
+    final bottomPadding = bottomInset > 0 ? bottomInset + 4.0 : 12.0;
+
     return ClipRect(
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
@@ -55,21 +68,18 @@ class _GlassNavBar extends StatelessWidget {
             color: p.base.withValues(alpha: 0.85),
             border: Border(top: BorderSide(color: p.border.withValues(alpha: 0.6))),
           ),
-          child: SafeArea(
-            top: false,
-            child: SizedBox(
-              height: 64,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  for (var i = 0; i < _items.length; i++)
-                    _NavButton(
-                        item: _items[i],
-                        selected: i == index,
-                        onTap: () => onTap(i)),
-                ],
-              ),
-            ),
+          padding: EdgeInsets.only(top: 8, bottom: bottomPadding),
+          child: Row(
+            children: [
+              for (var i = 0; i < _items.length; i++)
+                Expanded(
+                  child: _NavButton(
+                    item: _items[i],
+                    selected: i == index,
+                    onTap: () => onTap(i),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
@@ -91,13 +101,14 @@ class _NavButton extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 64, minHeight: 48),
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
           AnimatedContainer(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             decoration: BoxDecoration(
               color: selected ? p.accent.withValues(alpha: 0.12) : Colors.transparent,
               borderRadius: BorderRadius.circular(p.isTerminal ? 4 : 999),
@@ -111,13 +122,22 @@ class _NavButton extends StatelessWidget {
               child: Icon(item.icon, size: 22, color: color),
             ),
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 3),
           AnimatedDefaultTextStyle(
             duration: const Duration(milliseconds: 220),
-            style: Theme.of(context).textTheme.labelSmall!.copyWith(color: color),
-            child: Text(item.label.toUpperCase()),
+            style: Theme.of(context).textTheme.labelSmall!.copyWith(
+                  color: color,
+                  letterSpacing: 0.5,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                ),
+            child: Text(
+              item.label.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
           ),
-        ]),
+        ],
       ),
     );
   }

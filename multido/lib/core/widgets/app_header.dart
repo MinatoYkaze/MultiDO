@@ -39,6 +39,29 @@ class AppHeader extends ConsumerWidget {
         GestureDetector(
           onTap: () {
             ref.read(hapticsProvider).light();
+            ref.read(prefsProvider.notifier).toggleDarkMode();
+          },
+          child: Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: p.surface2,
+              borderRadius: BorderRadius.circular(p.isTerminal ? 4 : 12),
+              border: Border.all(color: p.border),
+            ),
+            child: Icon(
+              ref.watch(prefsProvider.select((s) => s.isDarkMode))
+                  ? Icons.light_mode_rounded
+                  : Icons.dark_mode_rounded,
+              size: 18,
+              color: p.textPrimary,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: () {
+            ref.read(hapticsProvider).light();
             context.push('/settings');
           },
           child: Hero(tag: 'avatar', child: UserAvatar(user: user, size: 36)),

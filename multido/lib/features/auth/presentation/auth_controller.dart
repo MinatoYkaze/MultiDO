@@ -2,12 +2,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/models.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/network/api_endpoints.dart';
+import '../../../core/storage/offline_cache.dart';
 import '../data/auth_repository.dart';
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) => AuthRepository(
       ref.watch(apiClientProvider),
       ref.watch(tokenStorageProvider),
       ref.watch(dioProvider),
+      ref.watch(offlineCacheProvider),
     ));
 
 /// `AsyncData(null)` = signed out, `AsyncData(user)` = signed in,
@@ -29,7 +31,9 @@ class AuthController extends AsyncNotifier<UserPost?> {
 
   Future<void> signInWithGoogle() async {
     final user = await _repo.signInWithGoogle();
-    state = AsyncData(user);
+    if (user != null) {
+      state = AsyncData(user);
+    }
   }
 
   Future<void> signInWithSecretKey(String key) async {
@@ -51,6 +55,9 @@ class AuthController extends AsyncNotifier<UserPost?> {
 
   Future<void> logout() async {
     await _repo.logout();
+    try {
+      await ref.read(offlineCacheProvider).clearAll();
+    } catch (_) {}
     state = const AsyncData(null);
   }
 }

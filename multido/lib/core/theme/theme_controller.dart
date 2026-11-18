@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -5,6 +6,7 @@ import 'app_palette.dart';
 
 class AppPrefsState {
   final AppThemeVariant variant;
+  final bool isDarkMode;
   final bool hapticsEnabled;
   final bool audioFx;
   final bool autoStartBreaks;
@@ -13,6 +15,7 @@ class AppPrefsState {
 
   const AppPrefsState({
     this.variant = AppThemeVariant.obsidianApplePrecision,
+    this.isDarkMode = true,
     this.hapticsEnabled = true,
     this.audioFx = true,
     this.autoStartBreaks = true,
@@ -22,6 +25,7 @@ class AppPrefsState {
 
   AppPrefsState copyWith({
     AppThemeVariant? variant,
+    bool? isDarkMode,
     bool? hapticsEnabled,
     bool? audioFx,
     bool? autoStartBreaks,
@@ -30,6 +34,7 @@ class AppPrefsState {
   }) =>
       AppPrefsState(
         variant: variant ?? this.variant,
+        isDarkMode: isDarkMode ?? this.isDarkMode,
         hapticsEnabled: hapticsEnabled ?? this.hapticsEnabled,
         audioFx: audioFx ?? this.audioFx,
         autoStartBreaks: autoStartBreaks ?? this.autoStartBreaks,
@@ -44,6 +49,7 @@ final sharedPrefsProvider = Provider<SharedPreferences>((ref) =>
 
 class PrefsController extends Notifier<AppPrefsState> {
   static const _kTheme = 'pref_theme_variant';
+  static const _kDarkMode = 'pref_dark_mode';
   static const _kHaptics = 'pref_haptics';
   static const _kAudio = 'pref_audio_fx';
   static const _kAuto = 'pref_auto_breaks';
@@ -58,6 +64,7 @@ class PrefsController extends Notifier<AppPrefsState> {
     return AppPrefsState(
       variant: AppThemeVariant.values.firstWhere((v) => v.name == name,
           orElse: () => AppThemeVariant.obsidianApplePrecision),
+      isDarkMode: _p.getBool(_kDarkMode) ?? true,
       hapticsEnabled: _p.getBool(_kHaptics) ?? true,
       audioFx: _p.getBool(_kAudio) ?? true,
       autoStartBreaks: _p.getBool(_kAuto) ?? true,
@@ -69,6 +76,17 @@ class PrefsController extends Notifier<AppPrefsState> {
   Future<void> setVariant(AppThemeVariant v) async {
     state = state.copyWith(variant: v);
     await _p.setString(_kTheme, v.name);
+  }
+
+  Future<void> toggleDarkMode() async {
+    final next = !state.isDarkMode;
+    state = state.copyWith(isDarkMode: next);
+    await _p.setBool(_kDarkMode, next);
+  }
+
+  Future<void> setDarkMode(bool dark) async {
+    state = state.copyWith(isDarkMode: dark);
+    await _p.setBool(_kDarkMode, dark);
   }
 
   Future<void> setHaptics(bool on) async {
@@ -102,29 +120,60 @@ final prefsProvider =
 
 /// Central haptics gate: every feature calls this instead of HapticFeedback
 /// directly so the Settings toggle is always respected.
+///
+/// On Android, it routes through a custom native MethodChannel using Android's
+/// Vibrator API with durations tuned for rotary (ERM) and linear (LRA) motors
+/// (e.g. Samsung Galaxy M/A-series, Pixel, OnePlus).
+/// On other platforms (or as a fallback), it uses Flutter's built-in HapticFeedback.
 class Haptics {
   Haptics(this._ref);
   final Ref _ref;
+  static const _channel = MethodChannel('com.example.multido/haptics');
+
   bool get _on => _ref.read(prefsProvider).hapticsEnabled;
 
+  void _trigger(String method, VoidCallback fallback) {
+    if (!_on) return;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      _channel.invokeMethod<bool>(method).catchError((_) => false).then((handled) {
+        if (handled != true) fallback();
+      });
+    } else {
+      fallback();
+    }
+  }
+
   void light() {
-    if (_on) HapticFeedback.lightImpact();
+    _trigger('light', HapticFeedback.lightImpact);
   }
 
   void medium() {
-    if (_on) HapticFeedback.mediumImpact();
+    _trigger('medium', HapticFeedback.mediumImpact);
   }
 
   void heavy() {
-    if (_on) HapticFeedback.heavyImpact();
+    _trigger('heavy', () {
+      HapticFeedback.heavyImpact();
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+        HapticFeedback.vibrate();
+      }
+    });
   }
 
   void selection() {
-    if (_on) HapticFeedback.selectionClick();
+    _trigger('selection', HapticFeedback.selectionClick);
   }
 
   Future<void> success() async {
     if (!_on) return;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        final handled = await _channel.invokeMethod<bool>('success');
+        if (handled == true) return;
+      } catch (_) {
+        // Fall back below if channel call fails.
+      }
+    }
     await HapticFeedback.mediumImpact();
     await Future<void>.delayed(const Duration(milliseconds: 90));
     await HapticFeedback.lightImpact();
