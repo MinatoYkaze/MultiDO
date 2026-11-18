@@ -139,3 +139,33 @@ class GroupTask(Base):
     @is_completed.setter
     def is_completed(self, val):
         self.completed = bool(val)
+
+    subtasks = relationship("GroupSubtask", back_populates="task", cascade="all, delete-orphan", lazy="joined")
+
+
+class GroupSubtask(Base):
+    __tablename__ = "group_subtasks"
+
+    id = Column(BigInteger, primary_key=True, nullable=False, autoincrement=True)
+    group_task_id = Column(
+        BigInteger,
+        ForeignKey("group_tasks.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    title = Column(String, nullable=False)
+    completed = Column(Boolean, nullable=False, server_default="False", default=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+    @property
+    def is_completed(self):
+        return bool(self.completed)
+
+    @is_completed.setter
+    def is_completed(self, val):
+        self.completed = bool(val)
+
+    @property
+    def task_id(self):
+        return self.group_task_id
+
+    task = relationship("GroupTask", back_populates="subtasks")

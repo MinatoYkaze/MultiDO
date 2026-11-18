@@ -128,6 +128,26 @@ class GroupTaskUpdate(BaseModel):
     due_date: Optional[datetime] = None
     assigned_to: Optional[int] = None
 
+class GroupSubtaskCreate(BaseModel):
+    title: str
+
+class GroupSubtaskUpdate(BaseModel):
+    title: Optional[str] = None
+    completed: Optional[bool] = None
+    is_completed: Optional[bool] = None
+
+class GroupSubtaskResponse(BaseModel):
+    id: int
+    task_id: int
+    group_task_id: Optional[int] = None
+    title: str
+    completed: bool = False
+    is_completed: bool = False
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
 class GroupTaskResponse(BaseModel):
     id: int
     title: str
@@ -141,5 +161,6 @@ class GroupTaskResponse(BaseModel):
     created_by: int
     created_at: datetime
     updated_at: Optional[datetime] = None
+    subtasks: List[GroupSubtaskResponse] = []
     class Config:
         from_attributes = True

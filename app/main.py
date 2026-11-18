@@ -20,6 +20,15 @@ try:
         conn.execute(text('ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS due_date TIMESTAMPTZ;'))
         conn.execute(text('ALTER TABLE "group_tasks" ADD COLUMN IF NOT EXISTS priority VARCHAR DEFAULT \'medium\';'))
         conn.execute(text('ALTER TABLE "group_tasks" ADD COLUMN IF NOT EXISTS due_date TIMESTAMPTZ;'))
+        conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS "group_subtasks" (
+                id BIGSERIAL PRIMARY KEY,
+                group_task_id BIGINT NOT NULL REFERENCES group_tasks(id) ON DELETE CASCADE,
+                title VARCHAR NOT NULL,
+                completed BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMPTZ DEFAULT now()
+            );
+        '''))
         conn.commit()
 except Exception as e:
     print(f"[DB] Migration notice: {e}")

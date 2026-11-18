@@ -429,3 +429,156 @@ def get_my_tasks(group_id: int, db: Session = Depends(database.get_db),current_u
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,detail="You are not a member of this group")
     tasks = db.query(models.GroupTask).filter(models.GroupTask.group_id == group_id,models.GroupTask.assigned_to == current_user["id"]).all()
     return tasks
+
+
+# ───────────────────────── Group Subtasks ─────────────────────────
+
+def _to_group_subtask_response(s: models.GroupSubtask) -> schemas.GroupSubtaskResponse:
+    return schemas.GroupSubtaskResponse(
+        id=s.id,
+        task_id=s.group_task_id,
+        group_task_id=s.group_task_id,
+        title=s.title,
+        completed=bool(s.completed),
+        is_completed=bool(s.completed),
+        created_at=s.created_at,
+    )
+
+
+@router.get("/{group_id}/tasks/{task_id}/subtasks", status_code=status.HTTP_200_OK, response_model=List[schemas.GroupSubtaskResponse])
+def get_group_subtasks(
+    group_id: int,
+    task_id: int,
+    db: Session = Depends(database.get_db),
+    current_user=Depends(get_current_user)
+):
+    group = db.query(models.Groups).filter(models.Groups.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+
+    member = db.query(models.Members).filter(
+        models.Members.group_id == group_id,
+        models.Members.user_id == current_user["id"]
+    ).first()
+    if not member:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not a member of this group")
+
+    task = db.query(models.GroupTask).filter(
+        models.GroupTask.id == task_id,
+        models.GroupTask.group_id == group_id
+    ).first()
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found in this group")
+
+    subtasks = db.query(models.GroupSubtask).filter(models.GroupSubtask.group_task_id == task_id).order_by(models.GroupSubtask.id.asc()).all()
+    return [_to_group_subtask_response(s) for s in subtasks]
+
+
+@router.post("/{group_id}/tasks/{task_id}/subtasks", status_code=status.HTTP_201_CREATED, response_model=schemas.GroupSubtaskResponse)
+def create_group_subtask(
+    group_id: int,
+    task_id: int,
+    post: schemas.GroupSubtaskCreate,
+    db: Session = Depends(database.get_db),
+    current_user=Depends(get_current_user)
+):
+    group = db.query(models.Groups).filter(models.Groups.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+
+    member = db.query(models.Members).filter(
+        models.Members.group_id == group_id,
+        models.Members.user_id == current_user["id"]
+    ).first()
+    if not member:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not a member of this group")
+
+    task = db.query(models.GroupTask).filter(
+        models.GroupTask.id == task_id,
+        models.GroupTask.group_id == group_id
+    ).first()
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found in this group")
+
+    new_subtask = models.GroupSubtask(
+        group_task_id=task_id,
+        title=post.title,
+        completed=False
+    )
+    db.add(new_subtask)
+    db.commit()
+    db.refresh(new_subtask)
+    return _to_group_subtask_response(new_subtask)
+
+
+@router.patch("/{group_id}/tasks/subtasks/{subtask_id}", status_code=status.HTTP_200_OK, response_model=schemas.GroupSubtaskResponse)
+@router.put("/{group_id}/tasks/subtasks/{subtask_id}", status_code=status.HTTP_200_OK, response_model=schemas.GroupSubtaskResponse)
+@router.patch("/{group_id}/tasks/{task_id}/subtasks/{subtask_id}", status_code=status.HTTP_200_OK, response_model=schemas.GroupSubtaskResponse)
+def update_group_subtask(
+    group_id: int,
+    subtask_id: int,
+    update: schemas.GroupSubtaskUpdate,
+    task_id: Optional[int] = None,
+    db: Session = Depends(database.get_db),
+    current_user=Depends(get_current_user)
+):
+    group = db.query(models.Groups).filter(models.Groups.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+
+    member = db.query(models.Members).filter(
+        models.Members.group_id == group_id,
+        models.Members.user_id == current_user["id"]
+    ).first()
+    if not member:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not a member of this group")
+
+    subtask = db.query(models.GroupSubtask).join(models.GroupTask).filter(
+        models.GroupSubtask.id == subtask_id,
+        models.GroupTask.group_id == group_id
+    ).first()
+    if not subtask:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subtask not found in this group")
+
+    if update.title is not None:
+        subtask.title = update.title
+    if update.completed is not None:
+        subtask.completed = bool(update.completed)
+    elif update.is_completed is not None:
+        subtask.completed = bool(update.is_completed)
+
+    db.commit()
+    db.refresh(subtask)
+    return _to_group_subtask_response(subtask)
+
+
+@router.delete("/{group_id}/tasks/subtasks/{subtask_id}", status_code=status.HTTP_200_OK, response_model=schemas.MessageResponse)
+@router.delete("/{group_id}/tasks/{task_id}/subtasks/{subtask_id}", status_code=status.HTTP_200_OK, response_model=schemas.MessageResponse)
+def delete_group_subtask(
+    group_id: int,
+    subtask_id: int,
+    task_id: Optional[int] = None,
+    db: Session = Depends(database.get_db),
+    current_user=Depends(get_current_user)
+):
+    group = db.query(models.Groups).filter(models.Groups.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+
+    member = db.query(models.Members).filter(
+        models.Members.group_id == group_id,
+        models.Members.user_id == current_user["id"]
+    ).first()
+    if not member:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not a member of this group")
+
+    subtask = db.query(models.GroupSubtask).join(models.GroupTask).filter(
+        models.GroupSubtask.id == subtask_id,
+        models.GroupTask.group_id == group_id
+    ).first()
+    if not subtask:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subtask not found in this group")
+
+    db.delete(subtask)
+    db.commit()
+    return {"message": "Subtask deleted successfully"}
