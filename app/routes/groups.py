@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException,status
 from .. import database,models,schemas
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from ..auth import get_current_user
 import secrets
 from datetime import timedelta, datetime,timezone
@@ -513,12 +513,10 @@ def create_group_subtask(
 
 @router.patch("/{group_id}/tasks/subtasks/{subtask_id}", status_code=status.HTTP_200_OK, response_model=schemas.GroupSubtaskResponse)
 @router.put("/{group_id}/tasks/subtasks/{subtask_id}", status_code=status.HTTP_200_OK, response_model=schemas.GroupSubtaskResponse)
-@router.patch("/{group_id}/tasks/{task_id}/subtasks/{subtask_id}", status_code=status.HTTP_200_OK, response_model=schemas.GroupSubtaskResponse)
 def update_group_subtask(
     group_id: int,
     subtask_id: int,
     update: schemas.GroupSubtaskUpdate,
-    task_id: Optional[int] = None,
     db: Session = Depends(database.get_db),
     current_user=Depends(get_current_user)
 ):
@@ -552,12 +550,23 @@ def update_group_subtask(
     return _to_group_subtask_response(subtask)
 
 
+@router.patch("/{group_id}/tasks/{task_id}/subtasks/{subtask_id}", status_code=status.HTTP_200_OK, response_model=schemas.GroupSubtaskResponse)
+@router.put("/{group_id}/tasks/{task_id}/subtasks/{subtask_id}", status_code=status.HTTP_200_OK, response_model=schemas.GroupSubtaskResponse)
+def update_group_task_subtask(
+    group_id: int,
+    task_id: int,
+    subtask_id: int,
+    update: schemas.GroupSubtaskUpdate,
+    db: Session = Depends(database.get_db),
+    current_user=Depends(get_current_user)
+):
+    return update_group_subtask(group_id=group_id, subtask_id=subtask_id, update=update, db=db, current_user=current_user)
+
+
 @router.delete("/{group_id}/tasks/subtasks/{subtask_id}", status_code=status.HTTP_200_OK, response_model=schemas.MessageResponse)
-@router.delete("/{group_id}/tasks/{task_id}/subtasks/{subtask_id}", status_code=status.HTTP_200_OK, response_model=schemas.MessageResponse)
 def delete_group_subtask(
     group_id: int,
     subtask_id: int,
-    task_id: Optional[int] = None,
     db: Session = Depends(database.get_db),
     current_user=Depends(get_current_user)
 ):
@@ -582,3 +591,14 @@ def delete_group_subtask(
     db.delete(subtask)
     db.commit()
     return {"message": "Subtask deleted successfully"}
+
+
+@router.delete("/{group_id}/tasks/{task_id}/subtasks/{subtask_id}", status_code=status.HTTP_200_OK, response_model=schemas.MessageResponse)
+def delete_group_task_subtask(
+    group_id: int,
+    task_id: int,
+    subtask_id: int,
+    db: Session = Depends(database.get_db),
+    current_user=Depends(get_current_user)
+):
+    return delete_group_subtask(group_id=group_id, subtask_id=subtask_id, db=db, current_user=current_user)
