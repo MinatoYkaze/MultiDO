@@ -55,6 +55,10 @@ class Groups(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     owners_id = Column(BigInteger, ForeignKey("users.id", ondelete='CASCADE'))
 
+    @property
+    def owner_id(self):
+        return self.owners_id
+
 class Members(Base):
     __tablename__ = "GroupMembers"
     __table_args__ = (
@@ -115,3 +119,7 @@ class GroupTask(Base):
         server_default=text("now()"),
         onupdate=func.now()
     )
+
+    @property
+    def is_completed(self):
+        return bool(self.completed)

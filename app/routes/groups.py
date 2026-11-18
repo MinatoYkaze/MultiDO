@@ -24,17 +24,44 @@ def create_group(posts: schemas.Group,db: Session = Depends(database.get_db),cur
     db.commit()
     return added
 
+def _to_group_response(db: Session, group: models.Groups) -> schemas.GroupPost:
+    member_count = db.query(models.Members).filter(models.Members.group_id == group.id).count()
+    task_count = db.query(models.GroupTask).filter(models.GroupTask.group_id == group.id).count()
+    completed_task_count = db.query(models.GroupTask).filter(
+        models.GroupTask.group_id == group.id,
+        models.GroupTask.completed == True
+    ).count()
+    return schemas.GroupPost(
+        id=group.id,
+        name=group.name,
+        description=group.description,
+        created_at=group.created_at,
+        owner_id=group.owners_id,
+        owners_id=group.owners_id,
+        member_count=member_count,
+        task_count=task_count,
+        completed_task_count=completed_task_count
+    )
+
 @router.get('/', status_code=status.HTTP_200_OK, response_model=List[schemas.GroupPost])
 def get_groups(db: Session = Depends(database.get_db), current_user=Depends(get_current_user)):
-    getting = db.query(models.Groups).filter(models.Groups.owners_id == current_user["id"]).all()
-    return getting or []
+    getting = db.query(models.Groups).outerjoin(
+        models.Members, models.Groups.id == models.Members.group_id
+    ).filter(
+        (models.Groups.owners_id == current_user["id"]) | (models.Members.user_id == current_user["id"])
+    ).distinct().all()
+    return [_to_group_response(db, g) for g in getting]
 
 @router.get("/{group_id}", status_code=status.HTTP_200_OK, response_model=schemas.GroupPost)
 def getting_post(group_id: int, db: Session = Depends(database.get_db), current_user=Depends(get_current_user)):
-    post = db.query(models.Groups).filter(models.Groups.id == group_id, models.Groups.owners_id == current_user["id"]).first()
-    if not post:
+    is_member = db.query(models.Members).filter(
+        models.Members.group_id == group_id,
+        models.Members.user_id == current_user["id"]
+    ).first()
+    post = db.query(models.Groups).filter(models.Groups.id == group_id).first()
+    if not post or (post.owners_id != current_user["id"] and not is_member):
          raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found or not authorized")
-    return post
+    return _to_group_response(db, post)
 
 @router.patch("/{group_id}", status_code=status.HTTP_200_OK, response_model=schemas.GroupPost)
 def updated_group(group_id: int, posts: schemas.UpdateGroup, db: Session = Depends(database.get_db), current_user=Depends(get_current_user)):

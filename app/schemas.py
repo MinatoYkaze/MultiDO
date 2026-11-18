@@ -71,6 +71,12 @@ class Group(BaseModel):
 
 class GroupPost(Group):
     id: int
+    created_at: Optional[datetime] = None
+    owner_id: Optional[int] = None
+    owners_id: Optional[int] = None
+    member_count: Optional[int] = 0
+    task_count: Optional[int] = 0
+    completed_task_count: Optional[int] = 0
     class Config:
         from_attributes = True
              
@@ -122,10 +128,11 @@ class GroupTaskResponse(BaseModel):
     title: str
     description: Optional[str] = None
     completed: bool = False
+    is_completed: bool = False
     group_id: int
     assigned_to: int
     created_by: int
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
     class Config:
         from_attributes = True

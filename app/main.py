@@ -6,7 +6,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from dotenv import load_dotenv
 
 from . import schemas, database, models, auth
-from .routes import tasks, groups
+from .routes import tasks, groups, ai
 
 load_dotenv()
 
@@ -30,6 +30,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(tasks.router)
 app.include_router(groups.router)
+app.include_router(ai.router)
 
 @app.get("/")
 def root():
