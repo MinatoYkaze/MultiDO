@@ -1,5 +1,7 @@
 from datetime import timedelta, datetime
 from typing import Annotated, Optional
+from urllib.parse import quote
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Body, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -85,9 +87,25 @@ def get_current_user(
     except JWTError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate user")
 
+def get_google_redirect_uri(request: Request) -> str:
+    env_redirect = os.getenv("GOOGLE_REDIRECT_URI")
+    if env_redirect and env_redirect.strip():
+        return env_redirect.strip()
+    url = str(request.url_for("google_callback"))
+    if request.headers.get("x-forwarded-proto") == "https" or "onrender.com" in url:
+        if url.startswith("http://"):
+            url = "https://" + url[7:]
+    return url
+
 @router.get("/google/login")
 async def google_login(request: Request):
-    redirect_uri = request.url_for("google_callback")
+    client_id = (os.getenv("CLIENT_ID") or "").strip()
+    if not client_id:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="CLIENT_ID environment variable is missing on Render. Please configure CLIENT_ID in your Render dashboard environment variables."
+        )
+    redirect_uri = get_google_redirect_uri(request)
     return await oauth.google.authorize_redirect(
         request,
         redirect_uri
@@ -95,22 +113,116 @@ async def google_login(request: Request):
 
 @router.get("/google/callback")
 async def google_callback(request: Request, response: Response, db: Session = Depends(database.get_db)):
-    token = await oauth.google.authorize_access_token(request)
-    user_info = token.get("userinfo") or {}
+    code = request.query_params.get("code")
+    error = request.query_params.get("error")
+    error_desc = request.query_params.get("error_description", error)
+
+    def _error_response(message: str):
+        print(f"[Google Auth ERROR] {message}")
+        mobile_redirect = f"obsidiantodo://auth?error={quote(message)}"
+        return RedirectResponse(url=mobile_redirect)
+
+    if error:
+        return _error_response(f"Google sign-in error: {error_desc or error}")
+
+    if not code:
+        return _error_response("Missing authorization code from Google.")
+
+    client_id = (os.getenv("CLIENT_ID") or "").strip()
+    client_secret = (os.getenv("CLIENT_SECRET") or "").strip()
+
+    if not client_id or not client_secret:
+        return _error_response("CLIENT_ID or CLIENT_SECRET is not configured in Render environment variables.")
+
+    redirect_uri = get_google_redirect_uri(request)
+    user_info = None
+
+    # Step 1: Attempt standard Authlib authorization (if session cookie is present)
+    try:
+        token = await oauth.google.authorize_access_token(request)
+        if token:
+            user_info = token.get("userinfo")
+            if not user_info and "access_token" in token:
+                async with httpx.AsyncClient() as client:
+                    ui_resp = await client.get(
+                        "https://www.googleapis.com/oauth2/v3/userinfo",
+                        headers={"Authorization": f"Bearer {token['access_token']}"}
+                    )
+                    if ui_resp.status_code == 200:
+                        user_info = ui_resp.json()
+    except Exception as e:
+        print(f"[Google Auth Notice] Authlib token exchange returned {type(e).__name__}: {e}. Falling back to direct exchange...")
+
+    # Step 2: Fallback direct token exchange with Google (handles session loss / state mismatch)
+    if not user_info:
+        try:
+            async with httpx.AsyncClient() as client:
+                token_resp = await client.post(
+                    "https://oauth2.googleapis.com/token",
+                    data={
+                        "code": code,
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "redirect_uri": redirect_uri,
+                        "grant_type": "authorization_code",
+                    },
+                    headers={"Accept": "application/json"}
+                )
+                token_data = token_resp.json()
+                if token_resp.status_code != 200:
+                    err_detail = token_data.get("error_description") or token_data.get("error") or str(token_data)
+                    return _error_response(f"Google token exchange failed ({token_resp.status_code}): {err_detail}. Please verify CLIENT_SECRET in Render dashboard.")
+
+                access_tok = token_data.get("access_token")
+                if access_tok:
+                    ui_resp = await client.get(
+                        "https://www.googleapis.com/oauth2/v3/userinfo",
+                        headers={"Authorization": f"Bearer {access_tok}"}
+                    )
+                    if ui_resp.status_code == 200:
+                        user_info = ui_resp.json()
+                    else:
+                        return _error_response(f"Failed to fetch user profile from Google: {ui_resp.text}")
+                else:
+                    return _error_response("No access token returned by Google.")
+        except Exception as ex:
+            return _error_response(f"Connection error exchanging Google token: {str(ex)}")
+
+    if not user_info or not user_info.get("email"):
+        return _error_response("Could not retrieve email profile from Google.")
+
     google_id = str(user_info.get("sub", ""))
-    email = user_info.get("email", "")
+    email = user_info.get("email", "").strip()
     name = user_info.get("name", email.split("@")[0] if email else "User")
 
-    user = db.query(models.Users).filter(models.Users.google_id == google_id).first()
-    if not user:
-        user = models.Users(
-            google_id=google_id,
-            username=name,
-            email=email
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+    try:
+        user = db.query(models.Users).filter(
+            (models.Users.google_id == google_id) | (models.Users.email == email)
+        ).first()
+
+        if not user:
+            user = models.Users(
+                google_id=google_id,
+                username=name,
+                email=email
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        else:
+            changed = False
+            if not user.google_id or user.google_id != google_id:
+                user.google_id = google_id
+                changed = True
+            if name and (not user.username or user.username == user.email):
+                user.username = name
+                changed = True
+            if changed:
+                db.commit()
+                db.refresh(user)
+    except Exception as db_err:
+        db.rollback()
+        return _error_response(f"Database error registering user: {str(db_err)}")
 
     acc_token = access_token(
         username=user.username,
