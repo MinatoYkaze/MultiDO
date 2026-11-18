@@ -20,9 +20,19 @@ class tasks(Base):
     title = Column(String, nullable=False)
     content = Column(String, nullable=True, default="")
     completed = Column(Boolean, nullable=False, server_default="False")
+    priority = Column(String, nullable=True, default="medium")
+    due_date = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=text('now()'))
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     users_id = Column(BigInteger, ForeignKey("users.id", ondelete='CASCADE'))
+
+    @property
+    def is_completed(self):
+        return bool(self.completed)
+
+    @is_completed.setter
+    def is_completed(self, val):
+        self.completed = bool(val)
 
     subtasks = relationship("Subtask", back_populates="task", cascade="all, delete-orphan", lazy="joined")
 
@@ -110,6 +120,8 @@ class GroupTask(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False
     )
+    priority = Column(String, nullable=True, default="medium")
+    due_date = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(
         DateTime(timezone=True),
         server_default=text("now()")
@@ -123,3 +135,7 @@ class GroupTask(Base):
     @property
     def is_completed(self):
         return bool(self.completed)
+
+    @is_completed.setter
+    def is_completed(self, val):
+        self.completed = bool(val)

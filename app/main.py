@@ -10,7 +10,19 @@ from .routes import tasks, groups, ai
 
 load_dotenv()
 
+from sqlalchemy import text
+
 models.Base.metadata.create_all(bind=database.engine)
+
+try:
+    with database.engine.connect() as conn:
+        conn.execute(text('ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS priority VARCHAR DEFAULT \'medium\';'))
+        conn.execute(text('ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS due_date TIMESTAMPTZ;'))
+        conn.execute(text('ALTER TABLE "group_tasks" ADD COLUMN IF NOT EXISTS priority VARCHAR DEFAULT \'medium\';'))
+        conn.execute(text('ALTER TABLE "group_tasks" ADD COLUMN IF NOT EXISTS due_date TIMESTAMPTZ;'))
+        conn.commit()
+except Exception as e:
+    print(f"[DB] Migration notice: {e}")
 
 app = FastAPI(title="MultiDO Task API")
 

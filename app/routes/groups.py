@@ -271,10 +271,13 @@ def make_tasks(group_id: int ,posts: schemas.GroupTasksCreate,db: Session = Depe
                           status_code=403,
                           detail="Only the group owner can create tasks."
             )
-    verify=db.query(models.Members).filter(models.Members.group_id==group_id, models.Members.user_id==posts.assigned_to).first()
+    assigned_user = posts.assigned_to or current_user["id"]
+    verify=db.query(models.Members).filter(models.Members.group_id==group_id, models.Members.user_id==assigned_user).first()
     if not verify:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User is not the member of this group")
-    ans=models.GroupTask(**posts.dict(), group_id=group_id,created_by=current_user["id"])
+    task_data = posts.dict()
+    task_data["assigned_to"] = assigned_user
+    ans=models.GroupTask(**task_data, group_id=group_id,created_by=current_user["id"])
     db.add(ans)
     db.commit()
     db.refresh(ans)
@@ -378,7 +381,10 @@ def update_group_task(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Assigned user is not a member of this group")
 
     for key, value in update_data.items():
-        setattr(task, key, value)
+        if key == "is_completed":
+            task.completed = bool(value)
+        elif hasattr(task, key):
+            setattr(task, key, value)
 
     db.commit()
     db.refresh(task)

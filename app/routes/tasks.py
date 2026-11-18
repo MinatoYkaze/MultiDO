@@ -29,8 +29,8 @@ def _to_task_post(t: models.tasks) -> schemas.TasksPost:
         description=t.content or "",
         completed=t.completed or False,
         is_completed=t.completed or False,
-        priority="medium",
-        due_date=None,
+        priority=t.priority or "medium",
+        due_date=t.due_date,
         created_at=t.created_at,
         updated_at=t.updated_at,
         subtasks=sub_list,
@@ -49,6 +49,8 @@ def post_tasks(posts: schemas.Tasks, db: Session = Depends(database.get_db), cur
         title=posts.title,
         content=content_val,
         completed=completed_val,
+        priority=posts.priority or "medium",
+        due_date=posts.due_date,
         users_id=current_user["id"],
     )
     db.add(added)
@@ -86,10 +88,18 @@ def update_tasks(id: int, posts: schemas.Tasks, db: Session = Depends(database.g
         qur.completed = posts.completed
     elif posts.is_completed is not None:
         qur.completed = posts.is_completed
+    if posts.priority:
+        qur.priority = posts.priority
+    if posts.due_date is not None:
+        qur.due_date = posts.due_date
 
     db.commit()
     db.refresh(qur)
     return _to_task_post(qur)
+
+@router.patch("/{id}", status_code=status.HTTP_200_OK, response_model=schemas.TasksPost)
+def patch_tasks(id: int, posts: schemas.Tasks, db: Session = Depends(database.get_db), current_user=Depends(get_current_user)):
+    return update_tasks(id=id, posts=posts, db=db, current_user=current_user)
 
 # Subtask endpoints
 @router.get("/{task_id}/subtasks", response_model=List[schemas.SubtaskResponse])
