@@ -54,7 +54,7 @@ class UserCreate(BaseModel):
 
 class UserPost(BaseModel):
     id: int
-    email: EmailStr
+    email: str
     name: Optional[str] = None
     username: Optional[str] = None
     class Config:
