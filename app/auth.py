@@ -3,7 +3,7 @@ from typing import Annotated, Optional
 from urllib.parse import quote
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Body, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.orm import Session
 from .database import SessionLocal, get_db
 from .models import Users
@@ -111,6 +111,84 @@ async def google_login(request: Request):
         redirect_uri
     )
 
+def _render_mobile_redirect_html(
+    target_url: str,
+    title: str = "Connecting to MultiDO...",
+    subtitle: str = "Returning you to the MultiDO app...",
+    button_text: str = "Open MultiDO App"
+) -> str:
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{title}</title>
+    <style>
+        * {{ box-sizing: border-box; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0B0F19;
+            color: #F8FAFC;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 24px;
+            text-align: center;
+        }}
+        .card {{
+            background: #141B2D;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            padding: 36px 24px;
+            max-width: 400px;
+            width: 100%;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+        }}
+        h2 {{ margin: 0 0 12px; font-size: 22px; font-weight: 700; }}
+        p {{ color: #94A3B8; font-size: 14px; margin: 0 0 24px; line-height: 1.5; }}
+        .btn {{
+            display: inline-block;
+            background: linear-gradient(135deg, #6366F1, #8B5CF6);
+            color: #FFFFFF !important;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 16px;
+            padding: 14px 32px;
+            border-radius: 14px;
+            box-shadow: 0 4px 16px rgba(99, 102, 241, 0.4);
+            cursor: pointer;
+        }}
+        .spinner {{
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(99, 102, 241, 0.2);
+            border-top-color: #6366F1;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 20px;
+        }}
+        @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+    </style>
+    <script>
+        function launch() {{
+            window.location.href = "{target_url}";
+        }}
+        launch();
+        setTimeout(launch, 300);
+    </script>
+</head>
+<body>
+    <div class="card">
+        <div class="spinner"></div>
+        <h2>{title}</h2>
+        <p>{subtitle}</p>
+        <a class="btn" href="{target_url}" onclick="launch()">{button_text}</a>
+    </div>
+</body>
+</html>"""
+
 @router.get("/google/callback")
 async def google_callback(request: Request, response: Response, db: Session = Depends(database.get_db)):
     code = request.query_params.get("code")
@@ -120,7 +198,13 @@ async def google_callback(request: Request, response: Response, db: Session = De
     def _error_response(message: str):
         print(f"[Google Auth ERROR] {message}")
         mobile_redirect = f"obsidiantodo://auth?error={quote(message)}"
-        return RedirectResponse(url=mobile_redirect)
+        html = _render_mobile_redirect_html(
+            target_url=mobile_redirect,
+            title="Authentication Error",
+            subtitle=f"{message}<br><br>Tap below to return to the app:",
+            button_text="Return to MultiDO"
+        )
+        return HTMLResponse(content=html, status_code=200)
 
     if error:
         return _error_response(f"Google sign-in error: {error_desc or error}")
@@ -238,7 +322,13 @@ async def google_callback(request: Request, response: Response, db: Session = De
     # Custom scheme redirect for mobile app (flutter_web_auth_2)
     mobile_redirect = f"obsidiantodo://auth?access_token={acc_token}&refresh_token={refresh}"
 
-    res = RedirectResponse(url=mobile_redirect)
+    html = _render_mobile_redirect_html(
+        target_url=mobile_redirect,
+        title="Welcome to MultiDO!",
+        subtitle="Sign-in successful. Returning you to the app... If it does not open automatically, tap below:",
+        button_text="Open MultiDO App"
+    )
+    res = HTMLResponse(content=html, status_code=200)
     res.set_cookie(
         key="access_token",
         value=acc_token,
