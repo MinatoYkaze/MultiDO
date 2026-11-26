@@ -4,7 +4,7 @@ class Api {
 
   /// Default deployed FastAPI origin on Render.
   static const baseUrl =
-      String.fromEnvironment('API_BASE_URL', defaultValue: 'https://multido-api.onrender.com');
+      String.fromEnvironment('API_BASE_URL', defaultValue: 'https://taskflow-api-v1-225t.onrender.com');
 
   /// Custom URL scheme the backend redirects to after Google OAuth
   /// (e.g. obsidiantodo://auth?access_token=...&refresh_token=...).
@@ -23,6 +23,11 @@ class Api {
   // Auth
   static const googleLogin = '/auth/google/login';
   static const googleCallback = '/auth/google/callback';
+  static const googleVerify = '/auth/google/verify';
+  static const googleServerClientId = String.fromEnvironment(
+    'GOOGLE_SERVER_CLIENT_ID',
+    defaultValue: '799034700511-d9qlkb3vop8ecotchs5ctk2kkci22ngb.apps.googleusercontent.com',
+  );
   static const refresh = '/auth/refresh';
   static const me = '/auth/me';
   static const logout = '/auth/Logout'; // capital L, as in the spec
@@ -43,10 +48,9 @@ class Api {
   static String groupSubtask(int g, int s) => '/groups/$g/tasks/subtasks/$s';
   static String groupMembers(int g) => '/groups/$g/members';
   static String groupInvite(int g) => '/groups/$g/invite';
-  static String acceptInvitation(String token) =>
-      '/groups/invitations/$token/accept';
-  static String invitationPreview(String token) =>
-      '/groups/invitations/$token/preview';
+  static const groupInvitations = '/groups/invitations';
+  static String respondInvitation(int invitationId) =>
+      '/groups/invitations/$invitationId/respond';
   static String groupLeave(int g) => '/groups/$g/leave';
   static String groupMember(int g, int userId) => '/groups/$g/members/$userId';
 
