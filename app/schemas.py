@@ -64,6 +64,17 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     refresh_token: Optional[str] = None
+
+class GoogleTokenVerify(BaseModel):
+    id_token: Optional[str] = None
+    access_token: Optional[str] = None
+    server_auth_code: Optional[str] = None
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    refresh_token: Optional[str] = None
+    user: Optional[UserPost] = None
     
 class Group(BaseModel):
     name: str

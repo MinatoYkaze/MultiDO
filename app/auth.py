@@ -257,6 +257,131 @@ async def google_callback(request: Request, response: Response, db: Session = De
     )
     return res
 
+@router.post("/google/verify", response_model=schemas.TokenResponse)
+async def google_verify(
+    payload: schemas.GoogleTokenVerify,
+    response: Response,
+    db: Session = Depends(database.get_db)
+):
+    """
+    Direct verification of Google tokens obtained natively from mobile GoogleSignIn SDK.
+    Eliminates browser redirects and cookie dependency.
+    """
+    if not payload.id_token and not payload.access_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="id_token or access_token is required"
+        )
+
+    user_info = None
+
+    # Step 1: Verify Google ID token via Google's tokeninfo endpoint
+    if payload.id_token:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.get(
+                    f"https://oauth2.googleapis.com/tokeninfo?id_token={payload.id_token}"
+                )
+                if res.status_code == 200:
+                    user_info = res.json()
+        except Exception as e:
+            print(f"[Google Verify] tokeninfo request failed: {e}")
+
+    # Step 2: Fallback to access_token userinfo endpoint
+    if not user_info and payload.access_token:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.get(
+                    "https://www.googleapis.com/oauth2/v3/userinfo",
+                    headers={"Authorization": f"Bearer {payload.access_token}"}
+                )
+                if res.status_code == 200:
+                    user_info = res.json()
+        except Exception as e:
+            print(f"[Google Verify] userinfo request failed: {e}")
+
+    if not user_info or not user_info.get("email"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Google credentials or unable to retrieve email profile"
+        )
+
+    google_id = str(user_info.get("sub", ""))
+    email = user_info.get("email", "").strip()
+    name = user_info.get("name", email.split("@")[0] if email else "User")
+
+    try:
+        user = db.query(models.Users).filter(
+            (models.Users.google_id == google_id) | (models.Users.email == email)
+        ).first()
+
+        if not user:
+            user = models.Users(
+                google_id=google_id,
+                username=name,
+                email=email
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        else:
+            changed = False
+            if not user.google_id or user.google_id != google_id:
+                user.google_id = google_id
+                changed = True
+            if name and (not user.username or user.username == user.email):
+                user.username = name
+                changed = True
+            if changed:
+                db.commit()
+                db.refresh(user)
+    except Exception as db_err:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error registering user: {str(db_err)}"
+        )
+
+    acc_token = access_token(
+        username=user.username,
+        id=user.id,
+        expires_delta=timedelta(days=7)
+    )
+    refresh = create_refresh_token(
+        username=user.username,
+        id=user.id,
+        expires_delta=timedelta(days=30)
+    )
+
+    response.set_cookie(
+        key="access_token",
+        value=acc_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=7 * 24 * 3600
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=30 * 24 * 3600
+    )
+
+    return {
+        "access_token": acc_token,
+        "refresh_token": refresh,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "name": user.username,
+        }
+    }
+
 @router.get("/me", response_model=schemas.UserPost)
 def get_login(current_user=Depends(get_current_user), db: Session = Depends(database.get_db)):
     user = db.query(models.Users).filter(models.Users.id == current_user["id"]).first()
